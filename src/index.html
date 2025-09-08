@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TiendaGo – PMV</title>
+  <style>
+    body { margin:0; font-family: Arial, Helvetica, sans-serif; background:#0b1220; color:#e6e8eb; }
+    header { padding:16px; background:#0f1830; border-bottom:1px solid #1e2a44; position:sticky; top:0; display:flex; justify-content:space-between; align-items:center; }
+    h1 { margin:0; font-size:20px; }
+    nav a { color:#a8b3cf; margin:0 10px; text-decoration:none; }
+    nav a:hover { color:#fff; }
+    main { max-width:980px; margin:0 auto; padding:16px; }
+
+    .grid { display:grid; gap:14px; }
+    @media (min-width: 720px) { .grid-3 { grid-template-columns: repeat(3, 1fr); } .grid-2 { grid-template-columns: repeat(2, 1fr);} }
+    .card { background:#0f1830; border:1px solid #1e2a44; border-radius:12px; padding:16px; }
+    .btn { background:#2563eb; color:#fff; border:none; border-radius:8px; padding:10px 14px; cursor:pointer; }
+    .btn.secondary { background:#334155; }
+    .btn.warn { background:#b91c1c; }
+    .actions { display:flex; gap:6px; flex-wrap:wrap; }
+    .input, select { width:100%; padding:10px; border:1px solid #1e2a44; border-radius:8px; background:#0b1220; color:#e6e8eb; }
+    .table { width:100%; border-collapse: collapse; margin-top:10px; }
+    .table th, .table td { border-bottom:1px solid #1e2a44; padding:8px; text-align:left; }
+    .muted { color:#a8b3cf; font-size:14px; }
+    .right { text-align:right; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>TiendaGo</h1>
+    <nav>
+      <a href="#" onclick="go('inicio')">Inicio</a>
+      <a href="#" onclick="go('productos')">Productos</a>
+      <a href="#" onclick="go('ventas')">Ventas</a>
+      <a href="#" onclick="go('reportes')">Reportes</a>
+    </nav>
+  </header>
+
+  <main id="view"></main>
+
+  <script>
+    const STORAGE_PRODUCTS = 'tg_productos';
+    const STORAGE_SALES    = 'tg_ventas';
+
+    const state = {
+      productos: load(STORAGE_PRODUCTS) || [],
+      ventas:    load(STORAGE_SALES)    || [],
+      editingId: null
+    };
+
+    function load(key){ try{ return JSON.parse(localStorage.getItem(key)||'[]'); }catch{ return []; } }
+    function save(key,v){ localStorage.setItem(key,JSON.stringify(v)); }
+
+    function go(view){
+      if(view==='productos') renderProductos();
+      else if(view==='ventas') renderVentas();
+      else if(view==='reportes') renderReportes();
+      else renderInicio();
+    }
+
+    // Vistas
+    function renderInicio(){
+      document.getElementById('view').innerHTML=`
+        <section class="grid grid-3">
+          <div class="card"><h3>Productos</h3><p class="muted">Registra y gestiona tu inventario.</p><button class="btn" onclick="go('productos')">Ir a Productos</button></div>
+          <div class="card"><h3>Ventas</h3><p class="muted">Registra ventas y descuenta stock.</p><button class="btn" onclick="go('ventas')">Ir a Ventas</button></div>
+          <div class="card"><h3>Reportes</h3><p class="muted">Totales de inventario y ventas.</p><button class="btn" onclick="go('reportes')">Ver Reportes</button></div>
+        </section>`;
+    }
+
+    function renderProductos(){
+      const rows = state.productos.map(p=>`
+        <tr>
+          <td>${p.nombre}</td><td>$${p.precio.toLocaleString('es-CO')}</td><td>${p.stock}</td>
+        </tr>`).join('') || `<tr><td colspan="3" class="muted">Sin productos</td></tr>`;
+      document.getElementById('view').innerHTML=`
+        <div class="card">
+          <h2>Productos</h2>
+          <div class="grid grid-2">
+            <input class="input" id="pNombre" placeholder="Nombre">
+            <input class="input" id="pPrecio" type="number" placeholder="Precio (COP)">
+            <input class="input" id="pStock" type="number" placeholder="Stock">
+            <button class="btn" onclick="guardarProducto()">Guardar</button>
+            <button class="btn secondary" onclick="exportarCSV('productos')">Exportar a CSV</button>
+          </div>
+          <table class="table"><thead><tr><th>Nombre</th><th>Precio</th><th>Stock</th></tr></thead><tbody>${rows}</tbody></table>
+        </div>`;
+    }
+
+    function renderVentas(){
+      const opts = state.productos.length
+        ? state.productos.map(p=>`<option value="${p.id}">${p.nombre} - $${p.precio} (Stock:${p.stock})</option>`).join('')
+        : '';
+      const ventasRows = state.ventas.map(v=>`
+        <tr><td>${new Date(v.fecha).toLocaleString('es-CO')}</td><td>${v.productoNombre}</td><td>${v.cantidad}</td><td>$${v.total}</td></tr>`
+      ).join('')||`<tr><td colspan="4" class="muted">Sin ventas</td></tr>`;
+      document.getElementById('view').innerHTML=`
+        <div class="card">
+          <h2>Ventas</h2>
+          ${state.productos.length?`
+            <div class="grid grid-2">
+              <select id="vProd" class="input">${opts}</select>
+              <input id="vCant" type="number" class="input" placeholder="Cantidad">
+              <button class="btn" onclick="registrarVenta()">Registrar</button>
+              <button class="btn secondary" onclick="exportarCSV('ventas')">Exportar CSV</button>
+            </div>`:`<p class="muted">Primero agrega productos.</p>`}
+          <h3>Historial</h3>
+          <table class="table"><thead><tr><th>Fecha</th><th>Producto</th><th>Cant</th><th>Total</th></tr></thead><tbody>${ventasRows}</tbody></table>
+        </div>`;
+    }
+
+    function renderReportes(){
+      const sumInventario=state.productos.reduce((a,p)=>a+p.precio*p.stock,0);
+      const sumVentas=state.ventas.reduce((a,v)=>a+v.total,0);
+      document.getElementById('view').innerHTML=`
+        <div class="card"><h2>Reportes</h2>
+          <p>Total productos: ${state.productos.length}</p>
+          <p>Valor inventario: $${sumInventario.toLocaleString('es-CO')}</p>
+          <p>Ventas: ${state.ventas.length}</p>
+          <p>Total vendido: $${sumVentas.toLocaleString('es-CO')}</p>
+        </div>`;
+    }
+
+    // Acciones
+    function guardarProducto(){
+      const nombre=document.getElementById('pNombre').value.trim();
+      const precio=Number(document.getElementById('pPrecio').value||0);
+      const stock=Number(document.getElementById('pStock').value||0);
+      if(!nombre||precio<=0) return alert("Datos inválidos");
+      state.productos.push({id:Date.now(),nombre,precio,stock});
+      save(STORAGE_PRODUCTS,state.productos);
+      renderProductos();
+    }
+
+    function registrarVenta(){
+      const id=Number(document.getElementById('vProd').value);
+      const cant=Number(document.getElementById('vCant').value||0);
+      const prod=state.productos.find(p=>p.id===id);
+      if(!prod||cant<=0||cant>prod.stock) return alert("Error en la venta");
+      prod.stock-=cant;
+      save(STORAGE_PRODUCTS,state.productos);
+      const venta={id:Date.now(),productoId:prod.id,productoNombre:prod.nombre,cantidad:cant,total:prod.precio*cant,fecha:new Date().toISOString()};
+      state.ventas.push(venta); save(STORAGE_SALES,state.ventas);
+      renderVentas();
+    }
+
+    // --- Exportar a CSV ---
+    function exportarCSV(tipo){
+      let data=[],filename='';
+      if(tipo==='productos'){ data=state.productos; filename='productos.csv'; }
+      if(tipo==='ventas'){ data=state.ventas; filename='ventas.csv'; }
+      if(!data.length) return alert("No hay datos");
+
+      const keys=Object.keys(data[0]);
+      const csv=[keys.join(",")].concat(data.map(r=>keys.map(k=>r[k]).join(","))).join("\n");
+
+      const blob=new Blob([csv],{type:'text/csv'});
+      const a=document.createElement("a");
+      a.href=URL.createObjectURL(blob);
+      a.download=filename;
+      a.click();
+    }
+
+    // Init
+    renderInicio();
+  </script>
+</body>
+</html>
